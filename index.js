@@ -10,8 +10,8 @@ var mongoose = require('mongoose');
 
 var version = '1010';
 
-var mongoDB = 'mongodb+srv://root:dadasda@cluster0-ti9su.mongodb.net/test?retryWrites=true&w=majority';
-mongoose.connect(mongoDB);
+var mongoDBUrl = `mongodb+srv://${process.env.mongodb_username}:${process.env.mongodb_password}@cluster0-ti9su.mongodb.net/test?retryWrites=true&w=majority`;
+
 var db = mongoose.connection;
 var Schema = mongoose.Schema;
 var cc = mongoose.model('codes', new Schema({}, {"strict": false}));
@@ -263,7 +263,20 @@ app.get('/version', function (req, res) {
   res.send({"version": version});
 });
 
+const connectToDB = async () => {
+  try {
+    await mongoose.connect(mongoDBUrl, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true
+    });
+    console.log("MongoDB connected");
+  } catch (err) {
+    console.log(err);
+  }
+}
+
 var port = process.env.PORT || 3003;
-http.listen(port, function () {
+http.listen(port, async () => {
   console.log('listening on *:' + port);
+  await connectToDB();
 });
