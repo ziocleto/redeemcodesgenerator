@@ -158,7 +158,7 @@ app.get('/download/:name/:quantity/:forreal?', function (req, res) {
   //                                                      update: { $set : { "downloaded" : true, "use_case" : req.params.name, "date_downloaded" : tn } } }
   //                                                  ).limit(parseInt(req.params.quantity));
   if (isNaN(req.params.quantity)) {
-    res.send('GamerSan that is and invalid number');
+    res.send('GamerSan that is an invalid number');
     return;
   }
 
