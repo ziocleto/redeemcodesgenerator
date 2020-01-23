@@ -10,7 +10,7 @@ var mongoose = require('mongoose');
 
 var version = '1010';
 
-var mongoDBUrl = `mongodb+srv://${process.env.mongodb_username}:${process.env.mongodb_password}@cluster0-ti9su.mongodb.net/test?retryWrites=true&w=majority`;
+var mongoDBUrl = `mongodb+srv://${process.env.mongodb_username}:${process.env.mongodb_password}@cluster0-ti9su.mongodb.net/codecollection?retryWrites=true&w=majority`;
 
 var db = mongoose.connection;
 var Schema = mongoose.Schema;
@@ -47,92 +47,92 @@ app.get('/', function (req, res) {
   res.sendFile(__dirname + '/index.html');
 });
 
-app.get('/generate/:quantity', function (req, res) {
+app.get('/generate/:quantity', async (req, res) => {
 
-  var codeGenerated = 0;
-
-  while (codeGenerated < req.params.quantity) {
-    var newcode = generateRandomCode();
-    cc.findOne({code: newcode}, function (err, entry) {
-      if (err) {
-        handleError(err);
-      } else {
-        if (entry) {
-          //res.send('code in there already: ' + newcode );
-        } else {
-          var codeentry = new cc({
-            code: newcode,
-            downloaded: false,
-            used: false,
-            used_case: "",
-            date_downloaded: -1,
-            date_used: -1
-          });
-          codeentry.save();
-        }
+  try {
+    let codeGenerated = 0;
+    while (codeGenerated < req.params.quantity) {
+      const newcode = generateRandomCode();
+      const entry = await cc.findOne({code: newcode});
+      if (entry === null) {
+        const codeentry = {
+          code: newcode,
+          downloaded: false,
+          used: false,
+          used_case: "",
+          date_downloaded: -1,
+          date_used: -1
+        };
+        await cc.create(codeentry);
+        codeGenerated++;
       }
-    });
-    codeGenerated++;
+    }
+    res.send('Codes Generated: ' + codeGenerated);
+  } catch (e) {
+    res.send('Result: error');
   }
-
-  res.send('Codes Generated: ' + codeGenerated);
-
 });
 
-app.get('/reset', function (req, res) {
-  db.collection('codes').updateMany({}, {
-    $set: {
-      "downloaded": false,
-      "used": false,
-      "use_case": "",
-      "date_downloaded": -1,
-      "date_used": -1
-    }
-  }, function (err, entry) {
-    if (err) {
-      handleError(err);
-    } else {
-      res.send('All codes reset');
-    }
-  });
+app.get('/reset', async (req, res) => {
+  try {
+    const entry = await cc.updateMany({}, {
+      $set: {
+        "downloaded": false,
+        "used": false,
+        "use_case": "",
+        "date_downloaded": -1,
+        "date_used": -1
+      }
+    });
+    res.send('All codes reset');
+  } catch (e) {
+    res.send(`'Sorry GamerSan something went wrong and it's all your fault`);
+  }
 });
 
 async function ctoArray(cursor) {
-  var ret = await cursor.toArray();
-  return ret;
+  return cursor.toArray();
 }
 
-function downloadCodes(name, quantity, res) {
-  var tn = Date.now();
-  var updatedIndex = 0;
-  var codes = "";
+const downloadCodes = async (name, quantity, res) => {
+  const tn = Date.now();
+  let updatedIndex = 0;
+  let codes = "";
 
-  db.collection('codes').find({
-    'code': {'$regex': /([^O0o]|-){11}/, '$options': 'i'},
+  const ret = await cc.find({
+    // 'code': {'$regex': /([^O0o]|-){11}/, '$options': 'i'},
     "downloaded": false
-  }).limit(quantity).forEach(function (elem) {
-      elem.downloaded = true;
-      elem.use_case = name;
-      elem.date_downloaded = tn;
-      updatedIndex++;
-      db.collection('codes').save(elem);
-      codes += elem.code + "\n";
-      if (updatedIndex == quantity) {
-        var filename = name + '_promocodes.txt';
-        fs.writeFile(filename, codes, function (err) {
-          if (err) {
-            res.send('Something when wrong');
-          } else {
-            res.download(filename);
-          }
-        })
+  }).limit(quantity);
+
+  if (ret === null || ret.length < quantity) {
+    res.send('Not enough codes available for download');
+    return;
+  }
+  for (const elemO of ret) {
+    const elem = elemO.toObject();
+    updatedIndex++;
+    await cc.findOneAndUpdate(
+      {"_id": elem._id},
+      {"downloaded": true, "use_case": name, "date_downloaded": tn}
+    );
+    codes += elem.code + "\n";
+  }
+
+  if (updatedIndex === quantity) {
+    const filename = name + '_promocodes.txt';
+    fs.writeFile(filename, codes, function (err) {
+      if (err) {
+        res.send('Something when wrong');
+      } else {
+        res.download(filename);
       }
-    }.bind(updatedIndex).bind(codes).bind(quantity).bind(name)
-  );
+    })
+  }
+
 }
 
-app.get('/download/:name/:quantity', function (req, res) {
-  // var cursor = db.collection('codes').findAndModify( { query : { "downloaded" : false },
+app.get('/download/:name/:quantity', async (req, res) => {
+  // var cursor = cc.findAndModify( { query : { "downloaded" : false },
   //                                                      update: { $set : { "downloaded" : true, "use_case" : req.params.name, "date_downloaded" : tn } } }
   //                                                  ).limit(parseInt(req.params.quantity));
   if (isNaN(req.params.quantity)) {
@@ -146,101 +146,94 @@ app.get('/download/:name/:quantity', function (req, res) {
     return;
   }
 
-  var name = req.params.name;
-  downloadCodes(name, quantity, res);
-
-  console.log('Downloaded codes data: ${req.params.name}, ${req.params.quantity}');
-  //res.sendFile(__dirname + '/index.html');
+  const name = req.params.name;
+  await downloadCodes(name, quantity, res);
 });
 
-app.get('/download/:name/:quantity/:forreal?', function (req, res) {
-  // var cursor = db.collection('codes').findAndModify( { query : { "downloaded" : false },
-  //                                                      update: { $set : { "downloaded" : true, "use_case" : req.params.name, "date_downloaded" : tn } } }
-  //                                                  ).limit(parseInt(req.params.quantity));
+app.get('/download/:name/:quantity/:forreal?', async (req, res) => {
   if (isNaN(req.params.quantity)) {
     res.send('GamerSan that is an invalid number');
     return;
   }
 
-  var name = req.params.name;
-  var quantity = parseInt(req.params.quantity);
-  downloadCodes(name, quantity, res);
-
-  console.log('Downloaded codes data: ${req.params.name}, ${req.params.quantity}');
-  //res.sendFile(__dirname + '/index.html');
+  const name = req.params.name;
+  const quantity = parseInt(req.params.quantity);
+  await downloadCodes(name, quantity, res);
 });
 
-app.get('/register_used/:code', function (req, res) {
-  var tn = Date.now();
-  var code = req.params.code;
-  db.collection('codes').findOneAndUpdate({"code": code, "used": false},
-    {$set: {"used": true, "date_used": tn}},
-    (err, doc) => {
-      let result = (err || doc == null) ? "error" : "ok";
-      if (doc && doc.value == null) result = "error";
-      res.send({"result": result});
-    });
+app.get('/register_used/:code', async (req, res) => {
+  const tn = Date.now();
+  const code = req.params.code;
+  try {
+    const doc = await cc.findOneAndUpdate({"code": code, "used": false},
+      {"used": true, "date_used": tn});
+
+    const result = (doc === null) ? "error" : "ok";
+    res.send({"result": result});
+  } catch (e) {
+    res.send({"register_used": false});
+  }
+
 });
 
-app.get('/list/:use_case', function (req, res) {
-  var use_case = req.params.use_case;
-  var query = db.collection('codes').count({"use_case": use_case}, (err, doc) => {
-    if (err || doc == null) {
+app.get('/list/:use_case', async (req, res) => {
+  try {
+    const use_case = req.params.use_case;
+    const doc = await cc.count({"use_case": use_case});
+    if (doc == null) {
       res.send({"result": "error"});
     } else {
       res.send({"total": doc});
-      // //res.json( util.inspect(doc) );
-      // let out = "";
-      // // console.log(doc);
-      // doc.forEach( myDoc => { out += "user: " + myDoc.code; } )
-      // res.send( out );
     }
-  });
+  } catch (e) {
+    res.send({"result": "error"});
+  }
 });
 
-app.get('/list/used/:use_case', function (req, res) {
-  var use_case = req.params.use_case;
-  var query = db.collection('codes').count({"use_case": use_case, "used": true}, (err, doc) => {
-    if (err || doc == null) {
-      res.send({"result": "error"});
+app.get('/list/used/:use_case', async (req, res) => {
+  try {
+    const use_case = req.params.use_case;
+    const doc = await cc.count({"use_case": use_case, "used": true});
+    if (doc == null) {
+      res.send({"total": 0});
     } else {
       res.send({"total": doc});
-      // //res.json( util.inspect(doc) );
-      // let out = "";
-      // // console.log(doc);
-      // doc.forEach( myDoc => { out += "user: " + myDoc.code; } )
-      // res.send( out );
     }
-  });
+  } catch (e) {
+    res.send({"result": "error"});
+  }
 });
 
-app.get('/overview', function (req, res) {
+app.get('/overview', async (req, res) => {
   let ret = {};
 
-  db.collection('codes').distinct("use_case", function (err, doc) {
-    if (err) {
-      res.send({"result": "error"});
-    } else {
-      let countDone = 0;
-      for (let t = 0; t < doc.length; t++) {
-        db.collection('codes').count({"use_case": doc[t]}, (err, doc2) => {
-          ret[doc[t]] = doc2;
-          ++countDone;
-          if (countDone == doc.length) {
-            res.send(ret);
-          }
-        });
+  try {
+    const doc = await cc.distinct("use_case");
+    let countDone = 0;
+    for (let t = 0; t < doc.length; t++) {
+      const doc2 = await cc.count({"use_case": doc[t]});
+      ret[doc[t]] = doc2;
+      ++countDone;
+      if (countDone == doc.length) {
+        res.send(ret);
+        return;
       }
     }
-  });
+    res.send("Nothing found yet");
+  } catch (e) {
+    res.send(e);
+  }
+
 });
 
-app.get('/query/:code/', function (req, res) {
-  var code = req.params.code;
-  db.collection('codes').findOne({"code": code}, (err, doc) => {
-    if (err || doc == null) {
+app.get('/query/:code/', async (req, res) => {
+  try {
+    const code = req.params.code;
+    const docO = await cc.findOne({"code": code});
+    if (docO == null) {
       res.send({"result": "Code doesn't exist/invalid"});
     } else {
+      const doc = docO.toObject();
       ddt = new Date(doc.date_downloaded);
       ddu = new Date(doc.date_used);
       const dd = (doc.date_downloaded != -1) ? ddt.toUTCString() : "Never";
@@ -248,15 +241,20 @@ app.get('/query/:code/', function (req, res) {
       const out = {"code": doc.code, "use case": doc.use_case, "downloaded/printed": dd, "used": du};
       res.send(JSON.stringify(out));
     }
-  });
+  } catch (e) {
+    res.send({"result": "Code doesn't exist/invalid"});
+  }
 });
 
-app.get('/use/:code', function (req, res) {
-  var code = req.params.code;
-  db.collection('codes').findOne({"downloaded": true, "code": code, "used": false}, (err, doc) => {
-    let result = (err || doc == null) ? "error" : "ok";
+app.get('/use/:code', async (req, res) => {
+  try {
+    const code = req.params.code;
+    const doc = await cc.findOne({"downloaded": true, "code": code, "used": false});
+    let result = (doc == null) ? "error" : "ok";
     res.send({"result": result});
-  });
+  } catch (e) {
+    res.send({"result": "error"});
+  }
 });
 
 app.get('/version', function (req, res) {
@@ -265,6 +263,7 @@ app.get('/version', function (req, res) {
 
 const connectToDB = async () => {
   try {
+    console.log(mongoDBUrl);
     await mongoose.connect(mongoDBUrl, {
       useNewUrlParser: true,
       useUnifiedTopology: true
