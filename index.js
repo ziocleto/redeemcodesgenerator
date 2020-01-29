@@ -107,6 +107,7 @@ const downloadCodes = async (name, quantity, res) => {
   }).limit(quantity);
 
   if (ret === null || ret.length < quantity) {
+    console.log( "Ret value:", ret, " for name ", name );
     res.send('Not enough codes available for download');
     return;
   }
@@ -127,6 +128,7 @@ const downloadCodes = async (name, quantity, res) => {
         res.send('Something when wrong');
       } else {
         res.download(filename);
+        res.send('Downloaded ' + quantity  + ' codes ' + ' for ' + name);
       }
     })
   }
