@@ -47,7 +47,7 @@ app.get('/', function (req, res) {
   res.sendFile(__dirname + '/index.html');
 });
 
-app.get('/generate/:quantity/:limit', async (req, res) => {
+app.get('/generate/:quantity/:name/:limit', async (req, res) => {
 
   try {
     let codeGenerated = 0;
@@ -60,7 +60,7 @@ app.get('/generate/:quantity/:limit', async (req, res) => {
           code: newcode,
           downloaded: false,
           used_count: 0,
-          used_case: "",
+          use_case: req.params.name,
           use_limit: limit,
           date_downloaded: -1,
           date_used: -1
@@ -81,7 +81,6 @@ app.get('/reset', async (req, res) => {
       $set: {
         "downloaded": false,
         "used_count": 0,
-        "use_case": "",
         "date_downloaded": -1,
         "date_used": -1
       }
@@ -103,7 +102,8 @@ const downloadCodes = async (name, quantity, res) => {
 
   const ret = await cc.find({
     // 'code': {'$regex': /([^O0o]|-){11}/, '$options': 'i'},
-    "downloaded": false
+    "downloaded": false,
+    "use_case": name,
   }).limit(quantity);
 
   if (ret === null || ret.length < quantity) {
@@ -115,7 +115,7 @@ const downloadCodes = async (name, quantity, res) => {
     updatedIndex++;
     await cc.findOneAndUpdate(
       {"_id": elem._id},
-      {"downloaded": true, "use_case": name, "date_downloaded": tn}
+      {"downloaded": true, "date_downloaded": tn}
     );
     codes += elem.code + "\n";
   }
