@@ -106,7 +106,7 @@ const downloadCodes = async (name, quantity, res) => {
     "use_case": name,
   }).limit(quantity);
 
-  if (ret === null || ret.length <= quantity) {
+  if (ret === null || ret.length < quantity) {
     res.send('Not enough codes available for download');
     return;
   }
