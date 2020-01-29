@@ -127,8 +127,8 @@ const downloadCodes = async (name, quantity, res) => {
       if (err) {
         res.send('Something when wrong');
       } else {
-        res.download(filename);
-        res.send('Downloaded ' + quantity  + ' codes ' + ' for ' + name);
+        res.download(filename, filename);
+        // res.send('Downloaded ' + quantity  + ' codes ' + ' for ' + name);
       }
     })
   }
