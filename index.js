@@ -8,7 +8,7 @@ var http = require('http').Server(app);
 var bodyParser = require('body-parser');
 var mongoose = require('mongoose');
 
-var version = '1010';
+var version = '2010';
 
 var mongoDBUrl = `mongodb+srv://${process.env.mongodb_username}:${process.env.mongodb_password}@cluster0-ti9su.mongodb.net/codecollection?retryWrites=true&w=majority`;
 
@@ -47,10 +47,11 @@ app.get('/', function (req, res) {
   res.sendFile(__dirname + '/index.html');
 });
 
-app.get('/generate/:quantity', async (req, res) => {
+app.get('/generate/:quantity/:limit', async (req, res) => {
 
   try {
     let codeGenerated = 0;
+    const limit = parseInt(req.params.limit);
     while (codeGenerated < req.params.quantity) {
       const newcode = generateRandomCode();
       const entry = await cc.findOne({code: newcode});
@@ -58,8 +59,9 @@ app.get('/generate/:quantity', async (req, res) => {
         const codeentry = {
           code: newcode,
           downloaded: false,
-          used: false,
+          used_count: 0,
           used_case: "",
+          use_limit: limit,
           date_downloaded: -1,
           date_used: -1
         };
@@ -78,7 +80,7 @@ app.get('/reset', async (req, res) => {
     const entry = await cc.updateMany({}, {
       $set: {
         "downloaded": false,
-        "used": false,
+        "used_count": 0,
         "use_case": "",
         "date_downloaded": -1,
         "date_used": -1
@@ -140,38 +142,29 @@ app.get('/download/:name/:quantity', async (req, res) => {
     return;
   }
 
-  var quantity = parseInt(req.params.quantity);
-  if (quantity > 10) {
-    res.send('GamerSan that is too big, dont be silly, but I know it was just a mistake...');
-    return;
-  }
-
-  const name = req.params.name;
-  await downloadCodes(name, quantity, res);
-});
-
-app.get('/download/:name/:quantity/:forreal?', async (req, res) => {
-  if (isNaN(req.params.quantity)) {
-    res.send('GamerSan that is an invalid number');
-    return;
-  }
-
   const name = req.params.name;
   const quantity = parseInt(req.params.quantity);
   await downloadCodes(name, quantity, res);
 });
 
-app.get('/register_used/:code', async (req, res) => {
+app.get('/register_used/:code/', async (req, res) => {
   const tn = Date.now();
   const code = req.params.code;
+  let result = "error";
   try {
-    const doc = await cc.findOneAndUpdate({"code": code, "used": false},
-      {"used": true, "date_used": tn});
-
-    const result = (doc === null) ? "error" : "ok";
+    const codeO = await cc.findOne({"downloaded": true, "code": code });
+    if ( codeO ) {
+      const codeDoc = codeO.toObject();
+      const doc = await cc.findOneAndUpdate(
+        {"downloaded": true, "code": code, "used_count": {$lt: codeDoc.use_limit }},
+        { $inc: { used_count: 1 }, "date_used" : tn }
+      );
+      result = (doc === null) ? "error" : "ok";
+    }
     res.send({"result": result});
   } catch (e) {
-    res.send({"register_used": false});
+    console.log(e);
+    res.send({"register_used": false, "cause": e });
   }
 
 });
@@ -193,7 +186,7 @@ app.get('/list/:use_case', async (req, res) => {
 app.get('/list/used/:use_case', async (req, res) => {
   try {
     const use_case = req.params.use_case;
-    const doc = await cc.count({"use_case": use_case, "used": true});
+    const doc = await cc.count({"use_case": use_case, "used_count":  {$gt: 0 }});
     if (doc == null) {
       res.send({"total": 0});
     } else {
@@ -238,7 +231,7 @@ app.get('/query/:code/', async (req, res) => {
       ddu = new Date(doc.date_used);
       const dd = (doc.date_downloaded != -1) ? ddt.toUTCString() : "Never";
       const du = (doc.date_used != -1) ? ddu.toUTCString() : "Never";
-      const out = {"code": doc.code, "use case": doc.use_case, "downloaded/printed": dd, "used": du};
+      const out = {"code": doc.code, "use case": doc.use_case, "downloaded/printed": dd, "used on": du, "number of uses": doc.used_count, "max allowed" : doc.use_limit };
       res.send(JSON.stringify(out));
     }
   } catch (e) {
@@ -246,14 +239,14 @@ app.get('/query/:code/', async (req, res) => {
   }
 });
 
-app.get('/use/:code', async (req, res) => {
+app.get('/used/:code/', async (req, res) => {
   try {
     const code = req.params.code;
-    const doc = await cc.findOne({"downloaded": true, "code": code, "used": false});
-    let result = (doc == null) ? "error" : "ok";
+    const doc = await cc.findOne({"downloaded": true, "code": code, "used_count": { $gt: 0 } });
+    let result = (doc == null ) ? "error" : "ok";
     res.send({"result": result});
   } catch (e) {
-    res.send({"result": "error"});
+    res.send({"result": "error", "cause": e });
   }
 });
 
