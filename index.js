@@ -11,6 +11,7 @@ var mongoose = require('mongoose');
 var version = '2050';
 
 var mongoDBUrl = `mongodb+srv://${process.env.mongodb_username}:${process.env.mongodb_password}@cluster0-ti9su.mongodb.net/codecollection?retryWrites=true&w=majority`;
+//var mongoDBUrl = `mongodb://127.0.0.1:27017/redeemcodes`;
 
 var db = mongoose.connection;
 var Schema = mongoose.Schema;
@@ -100,26 +101,48 @@ const downloadCodes = async (name, quantity, res) => {
   let updatedIndex = 0;
   let codes = "";
 
-  const ret = await cc.find({
-    // 'code': {'$regex': /([^O0o]|-){11}/, '$options': 'i'},
-    "downloaded": false,
-    "use_case": name,
-  }).limit(quantity);
+	const ret = await cc.find({
+		// 'code': {'$regex': /([^O0o]|-){11}/, '$options': 'i'},
+		"downloaded": false,
+		"use_case": name,
+	}).limit(quantity);
 
   if (ret === null || ret.length < quantity) {
     console.log( "Ret value:", ret, " for name ", name );
     res.send('Not enough codes available for download');
     return;
-  }
+	}
+
+    var bulkUpdateCallback = function (err, r) {
+        console.log(r.matchedCount);
+        console.log(r.modifiedCount);
+    }
+    // Initialise the bulk operations array
+    var bulkUpdateOps = [],
+        counter = 0;
+
   for (const elemO of ret) {
-    const elem = elemO.toObject();
+      const elem = elemO.toObject();
+
+      bulkUpdateOps.push({
+          "updateOne": {
+              "filter": { "_id": elem._id },
+              "update": { "$set": { "downloaded": true, "date_downloaded": tn } }
+          }
+      });
+      counter++;
+
+      if (counter % 500 == 0) {
+          // Get the underlying collection via the native node.js driver collection object
+          cc.bulkWrite(bulkUpdateOps, { "ordered": true, w: 1 }, bulkUpdateCallback);
+          bulkUpdateOps = []; // re-initialize
+      }
+
     updatedIndex++;
-    await cc.findOneAndUpdate(
-      {"_id": elem._id},
-      {"downloaded": true, "date_downloaded": tn}
-    );
     codes += elem.code + "\n";
-  }
+    }
+
+    if (counter % 500 != 0) { cc.bulkWrite(bulkUpdateOps, { "ordered": true, w: 1 }, bulkUpdateCallback); }
 
   if (updatedIndex === quantity) {
     const filename = name + '_promocodes.txt';
@@ -128,7 +151,7 @@ const downloadCodes = async (name, quantity, res) => {
         res.send('Something when wrong');
       } else {
         res.download(filename, filename);
-        // res.send('Downloaded ' + quantity  + ' codes ' + ' for ' + name);
+        //  res.send('Downloaded ' + quantity + ' codes ' + ' for ' + name);
       }
     })
   }
